@@ -1,0 +1,145 @@
+Parameters:
+  RuntimeCodeS3Bucket:
+    Type: String
+    Default: ""
+
+  RuntimeCodeS3KeyPrefix:
+    Type: String
+    Default: ""
+
+Resources:
+  ##########################################
+  # Gateway
+  ##########################################
+  GatewayExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*
+      Policies:
+        - PolicyName: Admin
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
+
+  Gateway:
+    Type: AWS::BedrockAgentCore::Gateway
+    Properties:
+      AuthorizerType: AWS_IAM
+      Description: Gateway
+      # InterceptorConfigurations:
+      #   - Interceptor:
+      #       Lambda:
+      #         Arn: !GetAtt InterceptorLambda.Arn
+      #     InterceptionPoints:
+      #       - REQUEST
+      #     InputConfiguration:
+      #       PassRequestHeaders: true
+      Name: gateway-to-runtime
+      RoleArn: !GetAtt GatewayExecutionRole.Arn
+
+  GatewayA2aRuntimeTarget:
+    Type: AWS::BedrockAgentCore::GatewayTarget
+    Properties:
+      CredentialProviderConfigurations:
+        - CredentialProviderType: GATEWAY_IAM_ROLE
+      Description: GatewayA2aRuntimeTarget
+      GatewayIdentifier: !Ref Gateway
+      Name: GatewayA2aRuntimeTarget
+      TargetConfiguration:
+        Http:
+          AgentcoreRuntime:
+            Arn: !GetAtt AgentCoreA2aRuntime.AgentRuntimeArn
+            Qualifier: DEFAULT
+
+  GatewayMcpRuntimeTarget:
+    Type: AWS::BedrockAgentCore::GatewayTarget
+    Properties:
+      CredentialProviderConfigurations:
+        - CredentialProviderType: GATEWAY_IAM_ROLE
+      Description: GatewayMcpRuntimeTarget
+      GatewayIdentifier: !Ref Gateway
+      Name: GatewayMcpRuntimeTarget
+      TargetConfiguration:
+        Http:
+          AgentcoreRuntime:
+            Arn: !GetAtt AgentCoreMcpRuntime.AgentRuntimeArn
+            Qualifier: DEFAULT
+
+  ##########################################
+  # Runtime
+  ##########################################
+  RuntimeExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock-agentcore.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:*
+      Policies:
+        - PolicyName: Admin
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
+
+  AgentCoreA2aRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeArtifact:
+        CodeConfiguration:
+          Code:
+            S3:
+              Bucket: !Ref RuntimeCodeS3Bucket
+              Prefix: !Sub ${RuntimeCodeS3KeyPrefix}a2a.zip
+          EntryPoint:
+            - a2a_runtime.py
+          Runtime: PYTHON_3_14
+      AgentRuntimeName: BedrockAgentCoreRuntime_A2A
+      Description: MCP server hosted on AgentCore Runtime
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      ProtocolConfiguration: A2A
+      RoleArn: !GetAtt RuntimeExecutionRole.Arn
+
+  AgentCoreMcpRuntime:
+    Type: AWS::BedrockAgentCore::Runtime
+    Properties:
+      AgentRuntimeArtifact:
+        CodeConfiguration:
+          Code:
+            S3:
+              Bucket: !Ref RuntimeCodeS3Bucket
+              Prefix: !Sub ${RuntimeCodeS3KeyPrefix}mcp.zip
+          EntryPoint:
+            - mcp_runtime.py
+          Runtime: PYTHON_3_14
+      AgentRuntimeName: BedrockAgentCoreRuntime_MCP
+      Description: MCP server hosted on AgentCore Runtime
+      NetworkConfiguration:
+        NetworkMode: PUBLIC
+      ProtocolConfiguration: MCP
+      RoleArn: !GetAtt RuntimeExecutionRole.Arn
